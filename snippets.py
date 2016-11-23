@@ -3,24 +3,39 @@ import argparse
 import psycopg2
 
 logging.basicConfig(filename="snippets.log", level=logging.DEBUG)
-
 logging.debug("Connecting to PostgreSQL")
-connection = psycopg2.connect(database="snippet")
+connection = psycopg2.connect(database="snippets")
 logging.debug("Database connection established.")
 
 def put(name, snippet):
     """ Store a snippet with an associated name """
     logging.info("Storing a snippet {!r}: {!r}".format(name, snippet))
-    cursor = connection.cursor()
-    command = "insert into snippets values (%s, %s)"
-    cursor.execute(command, (name, snippet))
+    with connection, connection.cursor() as cursor:
+        try:
+            command = "insert into snippets values (%s, %s)"
+            cursor.execute(command, (name, snippet))
+        except psycopg2.IntegrityError as e:
+            connection.rollback()
+            command= "update snippets set message=%s where keyword=%s"
+            cursor.execute(command, (snippet, name))
     connection.commit()
     logging.debug("Snippet stored successfully.")
     return name, snippet
     
 def get(name):
-    logging.error("FIXME: Unimplemented - get({!r})".format(name))
-    return " "
+    """Retrieving a snippet with a given keyword"""
+    logging.info("Retrieving a snippet {!r}".format(name))
+    #select = "select keyword, message from snippets where keyword=(%s)"
+    with connection, connection.cursor() as cursor:
+        cursor.execute("select keyword, message from snippets where keyword=(%s)", (name,))
+        row = cursor.fetchone()
+    if not row:
+        return "404: Snippet not found"
+    logging.info("Retrieved snippet {!r} as {!r} ".format(row[1], row[0]))
+    logging.debug("Snippet was successfully retrieved.")
+    return row
+    
+
     
 def main():
     """main function"""
@@ -49,8 +64,8 @@ def main():
         name, snippet = put(**arguments)
         print("Stored {!r} as {!r}".format(snippet, name))
     elif command == "get":
-        snippet = get(**arguments)
-        print("Retrieved snippet: {!r}".format(snippet))
+        name = get(**arguments)
+        print("Retrieved snippet: {!r}".format(name))
     
 if __name__ == "__main__":
     main()
